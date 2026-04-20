@@ -1,0 +1,102 @@
+"use server";
+
+import { createClient } from "@/lib/supabase/server";
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import type { TemplateFormValues } from "@/types/database";
+
+async function clearDefault(supabase: Awaited<ReturnType<typeof createClient>>, userId: string, excludeId?: string) {
+  const q = supabase
+    .from("templates")
+    .update({ is_default: false })
+    .eq("user_id", userId);
+  if (excludeId) q.neq("id", excludeId);
+  await q;
+}
+
+export async function createTemplate(
+  data: TemplateFormValues
+): Promise<{ error: string } | void> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "ログインが必要です" };
+
+  if (data.is_default) await clearDefault(supabase, user.id);
+
+  const { error } = await supabase.from("templates").insert({
+    ...data,
+    user_id: user.id,
+  });
+  if (error) return { error: error.message };
+
+  revalidatePath("/templates");
+  redirect("/templates");
+}
+
+export async function updateTemplate(
+  id: string,
+  data: TemplateFormValues
+): Promise<{ error: string } | void> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "ログインが必要です" };
+
+  if (data.is_default) await clearDefault(supabase, user.id, id);
+
+  const { error } = await supabase
+    .from("templates")
+    .update({ ...data, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .eq("user_id", user.id);
+  if (error) return { error: error.message };
+
+  revalidatePath("/templates");
+  revalidatePath(`/templates/${id}`);
+  redirect(`/templates/${id}`);
+}
+
+export async function deleteTemplate(
+  id: string
+): Promise<{ error: string } | void> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "ログインが必要です" };
+
+  const { error } = await supabase
+    .from("templates")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", user.id);
+  if (error) return { error: error.message };
+
+  revalidatePath("/templates");
+  redirect("/templates");
+}
+
+export async function duplicateTemplate(
+  id: string
+): Promise<{ error: string } | void> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "ログインが必要です" };
+
+  const { data: original } = await supabase
+    .from("templates")
+    .select("name, subject_template, body_template")
+    .eq("id", id)
+    .eq("user_id", user.id)
+    .single();
+  if (!original) return { error: "テンプレートが見つかりません" };
+
+  const { error } = await supabase.from("templates").insert({
+    user_id:          user.id,
+    name:             `${original.name}（コピー）`,
+    subject_template: original.subject_template,
+    body_template:    original.body_template,
+    is_default:       false,
+  });
+  if (error) return { error: error.message };
+
+  revalidatePath("/templates");
+  redirect("/templates");
+}
