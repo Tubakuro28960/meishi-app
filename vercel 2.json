@@ -1,9 +1,0 @@
-{
-  "buildCommand": "next build --webpack",
-  "crons": [
-    {
-      "path": "/api/scheduler",
-      "schedule": "*/5 * * * *"
-    }
-  ]
-}
