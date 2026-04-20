@@ -4,7 +4,7 @@ import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { renderTemplate } from "@/lib/templates/render";
 import { buildUrl, type MailMode } from "@/lib/send/mailto";
-import { recordImmediateJobs, recordScheduledJobs } from "@/lib/actions/send";
+import { recordImmediateJobs } from "@/lib/actions/send";
 import type { BusinessCard, Template } from "@/types/database";
 
 type Props = {
@@ -187,10 +187,6 @@ function Step3({
   previews,
   mailMode,
   onMailModeChange,
-  sendTiming,
-  onSendTimingChange,
-  scheduledAt,
-  onScheduledAtChange,
   onBack,
   onRecord,
   recording,
@@ -199,16 +195,11 @@ function Step3({
   previews: Preview[];
   mailMode: MailMode;
   onMailModeChange: (m: MailMode) => void;
-  sendTiming: "immediate" | "scheduled";
-  onSendTimingChange: (t: "immediate" | "scheduled") => void;
-  scheduledAt: string;
-  onScheduledAtChange: (v: string) => void;
   onBack: () => void;
   onRecord: () => void;
   recording: boolean;
   recordError: string | null;
 }) {
-  // 全件開く: hidden anchor refs
   const anchorRefs = useRef<(HTMLAnchorElement | null)[]>([]);
 
   function handleOpenAll() {
@@ -222,36 +213,6 @@ function Step3({
   return (
     <div>
       <h2 style={s.stepTitle}>送信内容を確認してください</h2>
-
-      {/* 送信タイミング切り替え */}
-      <div style={s.modeRow}>
-        <span style={s.modeLabel}>送信タイミング:</span>
-        {([["immediate", "即時送信"], ["scheduled", "予約送信"]] as const).map(([val, label]) => (
-          <label key={val} style={s.modeOption}>
-            <input
-              type="radio"
-              name="sendTiming"
-              checked={sendTiming === val}
-              onChange={() => onSendTimingChange(val)}
-            />
-            {label}
-          </label>
-        ))}
-      </div>
-
-      {/* 予約日時ピッカー */}
-      {sendTiming === "scheduled" && (
-        <div style={s.scheduledRow}>
-          <span style={s.modeLabel}>送信日時:</span>
-          <input
-            type="datetime-local"
-            value={scheduledAt}
-            onChange={(e) => onScheduledAtChange(e.target.value)}
-            min={new Date(Date.now() + 60_000).toISOString().slice(0, 16)}
-            style={s.datetimeInput}
-          />
-        </div>
-      )}
 
       {/* メール方法切り替え */}
       <div style={s.modeRow}>
@@ -280,7 +241,6 @@ function Step3({
                   <span style={s.previewName}>{p.card.name ?? "（氏名なし）"}</span>
                   <span style={s.previewTo}>宛先: {p.card.email}</span>
                 </div>
-                {/* hidden anchor for open-all */}
                 <a
                   ref={(el) => { anchorRefs.current[i] = el; }}
                   href={url}
@@ -329,14 +289,10 @@ function Step3({
         <button onClick={onBack} style={s.btnSecondary} disabled={recording}>← 戻る</button>
         <button
           onClick={onRecord}
-          style={{ ...s.btnSuccess, ...(sendTiming === "scheduled" ? s.btnScheduled : {}) }}
-          disabled={recording || (sendTiming === "scheduled" && !scheduledAt)}
+          style={s.btnSuccess}
+          disabled={recording}
         >
-          {recording
-            ? "処理中..."
-            : sendTiming === "scheduled"
-            ? `予約登録 (${previews.length} 件)`
-            : `送信を記録して完了 (${previews.length} 件)`}
+          {recording ? "処理中..." : `送信 (${previews.length} 件)`}
         </button>
       </div>
     </div>
@@ -352,8 +308,6 @@ export default function SendWizard({ cards, templates }: Props) {
     templates.find((t) => t.is_default)?.id ?? templates[0]?.id ?? null
   );
   const [mailMode, setMailMode] = useState<MailMode>("mailto");
-  const [sendTiming, setSendTiming] = useState<"immediate" | "scheduled">("immediate");
-  const [scheduledAt, setScheduledAt] = useState("");
   const [recording, setRecording] = useState(false);
   const [recordError, setRecordError] = useState<string | null>(null);
 
@@ -365,11 +319,9 @@ export default function SendWizard({ cards, templates }: Props) {
     });
   }
 
-  // 選択済みカードを順序維持で取得
   const selectedCards = cards.filter((c) => selectedCardIds.has(c.id));
   const selectedTemplate = templates.find((t) => t.id === selectedTemplateId) ?? null;
 
-  // プレビュー生成
   const previews: Preview[] = selectedCards
     .filter((c) => c.email)
     .map((card) => {
@@ -379,7 +331,7 @@ export default function SendWizard({ cards, templates }: Props) {
         department:  card.department,
         position:    card.position,
         email:       card.email,
-        sender_name: null, // TODO: ユーザープロフィール設定後に反映
+        sender_name: null,
       };
       return {
         card,
@@ -401,9 +353,7 @@ export default function SendWizard({ cards, templates }: Props) {
       body:             p.body,
     }));
 
-    const result = sendTiming === "scheduled"
-      ? await recordScheduledJobs(jobInputs, scheduledAt)
-      : await recordImmediateJobs(jobInputs);
+    const result = await recordImmediateJobs(jobInputs);
 
     if (result?.error) {
       setRecordError(result.error);
@@ -440,10 +390,6 @@ export default function SendWizard({ cards, templates }: Props) {
             previews={previews}
             mailMode={mailMode}
             onMailModeChange={setMailMode}
-            sendTiming={sendTiming}
-            onSendTimingChange={setSendTiming}
-            scheduledAt={scheduledAt}
-            onScheduledAtChange={setScheduledAt}
             onBack={() => setStep(2)}
             onRecord={handleRecord}
             recording={recording}
@@ -457,11 +403,8 @@ export default function SendWizard({ cards, templates }: Props) {
 
 // ─── スタイル ─────────────────────────────────────────
 const s: Record<string, React.CSSProperties> = {
-  // layout
   root:           { maxWidth: 800 },
   body:           { background: "#fff", borderRadius: 8, padding: "1.5rem", boxShadow: "0 1px 4px rgba(0,0,0,0.08)" },
-
-  // stepper
   stepper:        { display: "flex", alignItems: "center", marginBottom: "1.5rem" },
   stepItem:       { display: "flex", alignItems: "center", gap: "0.5rem", flex: 1 },
   stepCircle:     { width: 28, height: 28, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.875rem", fontWeight: 700, flexShrink: 0 },
@@ -471,15 +414,11 @@ const s: Record<string, React.CSSProperties> = {
   stepLabel:      { fontSize: "0.8125rem", color: "#94a3b8", whiteSpace: "nowrap" },
   stepLabelActive:{ color: "#1e293b", fontWeight: 600 },
   stepLine:       { flex: 1, height: 1, background: "#e2e8f0", margin: "0 0.25rem" },
-
-  // step common
   stepTitle:      { fontSize: "1.125rem", fontWeight: 700, marginBottom: "0.5rem", color: "#1e293b" },
   stepDesc:       { fontSize: "0.875rem", color: "#64748b", marginBottom: "1rem" },
   stepActions:    { display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "1.5rem", paddingTop: "1rem", borderTop: "1px solid #f1f5f9" },
   selCount:       { fontSize: "0.875rem", color: "#64748b" },
   empty:          { color: "#94a3b8", fontSize: "0.875rem", padding: "1rem 0" },
-
-  // card list (step1)
   cardList:       { display: "flex", flexDirection: "column", gap: "0.5rem", marginBottom: "0.75rem" },
   cardRow:        { display: "flex", alignItems: "center", gap: "0.875rem", padding: "0.75rem 1rem", border: "1px solid #e2e8f0", borderRadius: 6, cursor: "pointer" },
   cardRowChecked: { border: "1px solid #93c5fd", background: "#eff6ff" },
@@ -490,8 +429,6 @@ const s: Record<string, React.CSSProperties> = {
   cardCompany:    { color: "#64748b", fontSize: "0.875rem" },
   cardEmail:      { color: "#2563eb", fontSize: "0.875rem", fontFamily: "monospace" },
   noEmailLabel:   { fontSize: "0.75rem", fontWeight: 600, color: "#94a3b8", marginTop: "0.5rem", marginBottom: "0.375rem" },
-
-  // template list (step2)
   tmplList:       { display: "flex", flexDirection: "column", gap: "0.5rem" },
   tmplRow:        { display: "flex", alignItems: "flex-start", gap: "0.875rem", padding: "0.875rem 1rem", border: "1px solid #e2e8f0", borderRadius: 6, cursor: "pointer" },
   tmplRowChecked: { border: "1px solid #93c5fd", background: "#eff6ff" },
@@ -501,14 +438,9 @@ const s: Record<string, React.CSSProperties> = {
   tmplName:       { fontWeight: 600, color: "#1e293b", fontSize: "0.9375rem" },
   badge:          { padding: "0.125rem 0.5rem", background: "#dbeafe", color: "#1d4ed8", borderRadius: 20, fontSize: "0.75rem", fontWeight: 600 },
   tmplSubject:    { fontSize: "0.8125rem", color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 480 },
-
-  // preview (step3)
   modeRow:        { display: "flex", alignItems: "center", gap: "1.25rem", marginBottom: "1rem", padding: "0.625rem 0.875rem", background: "#f8fafc", borderRadius: 4 },
   modeLabel:      { fontSize: "0.875rem", fontWeight: 600, color: "#374151", flexShrink: 0 },
   modeOption:     { display: "flex", alignItems: "center", gap: "0.375rem", fontSize: "0.875rem", cursor: "pointer" },
-  scheduledRow:   { display: "flex", alignItems: "center", gap: "1rem", marginBottom: "1rem", padding: "0.625rem 0.875rem", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 4 },
-  datetimeInput:  { padding: "0.375rem 0.625rem", border: "1px solid #d1d5db", borderRadius: 4, fontSize: "0.875rem", color: "#1e293b" },
-  btnScheduled:   { background: "#7c3aed" },
   previewList:    { display: "flex", flexDirection: "column", gap: "1rem" },
   previewCard:    { border: "1px solid #e2e8f0", borderRadius: 6, overflow: "hidden" },
   previewHeader:  { display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0.75rem 1rem", background: "#f8fafc", borderBottom: "1px solid #e2e8f0", flexWrap: "wrap", gap: "0.5rem" },
@@ -524,8 +456,6 @@ const s: Record<string, React.CSSProperties> = {
   openAllBtn:     { padding: "0.5rem 1.25rem", background: "#d97706", color: "#fff", border: "none", borderRadius: 4, fontSize: "0.9375rem", cursor: "pointer", fontWeight: 600 },
   popupWarn:      { fontSize: "0.8125rem", color: "#92400e", marginTop: "0.5rem" },
   errorMsg:       { color: "#dc2626", fontSize: "0.875rem", marginTop: "0.75rem" },
-
-  // buttons
   btnPrimary:     { padding: "0.5rem 1.5rem", background: "#2563eb", color: "#fff", border: "none", borderRadius: 4, fontSize: "0.9375rem", fontWeight: 600, cursor: "pointer" },
   btnSecondary:   { padding: "0.5rem 1.25rem", background: "#fff", color: "#374151", border: "1px solid #d1d5db", borderRadius: 4, fontSize: "0.9375rem", cursor: "pointer" },
   btnSuccess:     { padding: "0.5rem 1.5rem", background: "#16a34a", color: "#fff", border: "none", borderRadius: 4, fontSize: "0.9375rem", fontWeight: 600, cursor: "pointer" },
