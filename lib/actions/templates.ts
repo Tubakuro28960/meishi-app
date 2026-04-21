@@ -5,11 +5,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { TemplateFormValues } from "@/types/database";
 
-async function clearDefault(supabase: Awaited<ReturnType<typeof createClient>>, userId: string, excludeId?: string) {
-  const q = supabase
-    .from("templates")
-    .update({ is_default: false })
-    .eq("user_id", userId);
+async function clearDefault(supabase: Awaited<ReturnType<typeof createClient>>, excludeId?: string) {
+  const q = supabase.from("templates").update({ is_default: false });
   if (excludeId) q.neq("id", excludeId);
   await q;
 }
@@ -21,12 +18,9 @@ export async function createTemplate(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: "ログインが必要です" };
 
-  if (data.is_default) await clearDefault(supabase, user.id);
+  if (data.is_default) await clearDefault(supabase);
 
-  const { error } = await supabase.from("templates").insert({
-    ...data,
-    user_id: user.id,
-  });
+  const { error } = await supabase.from("templates").insert(data);
   if (error) return { error: error.message };
 
   revalidatePath("/templates");
@@ -41,13 +35,12 @@ export async function updateTemplate(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: "ログインが必要です" };
 
-  if (data.is_default) await clearDefault(supabase, user.id, id);
+  if (data.is_default) await clearDefault(supabase, id);
 
   const { error } = await supabase
     .from("templates")
     .update({ ...data, updated_at: new Date().toISOString() })
-    .eq("id", id)
-    .eq("user_id", user.id);
+    .eq("id", id);
   if (error) return { error: error.message };
 
   revalidatePath("/templates");
@@ -66,14 +59,12 @@ export async function deleteTemplate(
   await supabase
     .from("send_jobs")
     .update({ template_id: null })
-    .eq("template_id", id)
-    .eq("user_id", user.id);
+    .eq("template_id", id);
 
   const { error } = await supabase
     .from("templates")
     .delete()
-    .eq("id", id)
-    .eq("user_id", user.id);
+    .eq("id", id);
   if (error) return { error: error.message };
 
   revalidatePath("/templates");
@@ -90,12 +81,10 @@ export async function duplicateTemplate(
     .from("templates")
     .select("name, subject_template, body_template")
     .eq("id", id)
-    .eq("user_id", user.id)
     .single();
   if (!original) return { error: "テンプレートが見つかりません" };
 
   const { error } = await supabase.from("templates").insert({
-    user_id:          user.id,
     name:             `${original.name}（コピー）`,
     subject_template: original.subject_template,
     body_template:    original.body_template,
