@@ -62,6 +62,13 @@ export async function deleteTemplate(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return { error: "ログインが必要です" };
 
+  // send_jobs の外部キー制約を回避するため先に参照を外す
+  await supabase
+    .from("send_jobs")
+    .update({ template_id: null })
+    .eq("template_id", id)
+    .eq("user_id", user.id);
+
   const { error } = await supabase
     .from("templates")
     .delete()
@@ -70,7 +77,6 @@ export async function deleteTemplate(
   if (error) return { error: error.message };
 
   revalidatePath("/templates");
-  redirect("/templates");
 }
 
 export async function duplicateTemplate(
