@@ -11,8 +11,6 @@ const navItems = [
   { href: "/cards/new", label: "名刺追加" },
   { href: "/templates", label: "テンプレート" },
   { href: "/send", label: "送信" },
-  { href: "/jobs", label: "送信履歴" },
-  { href: "/settings", label: "設定" },
 ];
 
 export default async function AppLayout({
