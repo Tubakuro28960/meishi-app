@@ -161,7 +161,7 @@ export default function OcrConfirmForm({
                 ⚠ メールアドレスが読み取れませんでした。手動で入力してください。
               </div>
             )}
-            <div style={s.grid}>
+            <div className="grid-2col" style={s.grid}>
               {FIELDS.map(({ key, label, type, wide }) => (
                 <div key={key} style={wide ? s.fullCol : s.halfCol}>
                   <label style={s.label}>

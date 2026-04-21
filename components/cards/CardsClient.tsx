@@ -258,7 +258,7 @@ export default function CardsClient({ cards }: Props) {
           {filtered.length === 0 ? (
             <div style={s.noResult}>条件に一致する名刺がありません。</div>
           ) : (
-            <div style={s.tableWrap}>
+            <div className="table-scroll" style={s.tableWrap}>
               <table style={s.table}>
                 <thead>
                   <tr>

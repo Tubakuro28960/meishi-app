@@ -194,6 +194,7 @@ export default function CardsNewClient({ templates }: Props) {
         onDrop={handleDrop}
         onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
         onDragLeave={() => setIsDragging(false)}
+        className="dropzone-mobile"
         style={{
           ...s.dropZone,
           ...(isDragging ? s.dropZoneActive : {}),
