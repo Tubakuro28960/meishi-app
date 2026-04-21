@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useTransition } from "react";
+import { useState, useMemo, useTransition, useEffect } from "react";
 import Link from "next/link";
 import DeleteButton from "@/components/cards/DeleteButton";
 import { deleteCards } from "@/lib/actions/cards";
@@ -64,6 +64,14 @@ export default function CardsClient({ cards }: Props) {
   const [dupOnly, setDupOnly] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth <= 640);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
 
   const { dupIds, groups } = useMemo(() => buildDuplicates(cards), [cards]);
 
@@ -247,7 +255,7 @@ export default function CardsClient({ cards }: Props) {
         </div>
       )}
 
-      {/* 通常テーブル */}
+      {/* 通常リスト */}
       {!dupOnly && (
         <>
           <p style={s.countLine}>
@@ -257,28 +265,48 @@ export default function CardsClient({ cards }: Props) {
 
           {filtered.length === 0 ? (
             <div style={s.noResult}>条件に一致する名刺がありません。</div>
+          ) : isMobile ? (
+            /* ── モバイル: カード型レイアウト ── */
+            <div style={s.mobileList}>
+              {filtered.map(card => {
+                const isDup = dupIds.has(card.id);
+                return (
+                  <div key={card.id} style={{ ...s.mobileCard, ...(isDup ? s.mobileCardDup : {}) }}>
+                    <div style={s.mobileCardTop}>
+                      <div style={s.mobileNameRow}>
+                        <span style={s.mobileName}>{card.name ?? "—"}</span>
+                        {isDup && <span style={s.dupBadge}>重複</span>}
+                      </div>
+                      <Link href={`/cards/${card.id}`} style={s.mobileDetailBtn}>詳細</Link>
+                    </div>
+                    <p style={s.mobileCompany}>
+                      {[card.company, card.department].filter(Boolean).join(" / ") || "—"}
+                    </p>
+                    {card.email && (
+                      <a href={`mailto:${card.email}`} style={s.mobileEmail}>{card.email}</a>
+                    )}
+                    <div style={s.mobileBottom}>
+                      <span style={s.mobileDate}>{new Date(card.created_at).toLocaleDateString("ja-JP")}</span>
+                      <div style={s.mobileActions}>
+                        <Link href={`/cards/${card.id}/edit`} style={s.editBtn}>編集</Link>
+                        <DeleteButton id={card.id} />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           ) : (
+            /* ── デスクトップ: テーブル ── */
             <div className="table-scroll" style={s.tableWrap}>
               <table style={s.table}>
                 <thead>
                   <tr>
-                    <th style={s.th}>
-                      <button type="button" onClick={() => toggleSort("name")} style={s.thBtn}>
-                        氏名 <SortIcon k="name" />
-                      </button>
-                    </th>
-                    <th style={s.th}>
-                      <button type="button" onClick={() => toggleSort("company")} style={s.thBtn}>
-                        会社名 <SortIcon k="company" />
-                      </button>
-                    </th>
+                    <th style={s.th}><button type="button" onClick={() => toggleSort("name")} style={s.thBtn}>氏名 <SortIcon k="name" /></button></th>
+                    <th style={s.th}><button type="button" onClick={() => toggleSort("company")} style={s.thBtn}>会社名 <SortIcon k="company" /></button></th>
                     <th style={s.th}>部署</th>
                     <th style={s.th}>メールアドレス</th>
-                    <th style={s.th}>
-                      <button type="button" onClick={() => toggleSort("created_at")} style={s.thBtn}>
-                        登録日 <SortIcon k="created_at" />
-                      </button>
-                    </th>
+                    <th style={s.th}><button type="button" onClick={() => toggleSort("created_at")} style={s.thBtn}>登録日 <SortIcon k="created_at" /></button></th>
                     <th style={s.th}></th>
                   </tr>
                 </thead>
@@ -290,21 +318,15 @@ export default function CardsClient({ cards }: Props) {
                         <td style={s.td}>
                           <div style={s.nameCell}>
                             {card.name ?? "—"}
-                            {isDup && (
-                              <span style={s.dupBadge} title="重複あり">重複</span>
-                            )}
+                            {isDup && <span style={s.dupBadge} title="重複あり">重複</span>}
                           </div>
                         </td>
                         <td style={s.td}>{card.company ?? "—"}</td>
                         <td style={s.td}>{card.department ?? "—"}</td>
                         <td style={s.td}>
-                          {card.email
-                            ? <a href={`mailto:${card.email}`} style={s.emailLink}>{card.email}</a>
-                            : "—"}
+                          {card.email ? <a href={`mailto:${card.email}`} style={s.emailLink}>{card.email}</a> : "—"}
                         </td>
-                        <td style={{ ...s.td, ...s.dateCell }}>
-                          {new Date(card.created_at).toLocaleDateString("ja-JP")}
-                        </td>
+                        <td style={{ ...s.td, ...s.dateCell }}>{new Date(card.created_at).toLocaleDateString("ja-JP")}</td>
                         <td style={{ ...s.td, ...s.actionCell }}>
                           <Link href={`/cards/${card.id}`} style={s.detailBtn}>詳細</Link>
                           <Link href={`/cards/${card.id}/edit`} style={s.editBtn}>編集</Link>
@@ -393,4 +415,18 @@ const s: Record<string, React.CSSProperties> = {
   emailLink: { color: "#2563eb", textDecoration: "none" },
   detailBtn: { padding: "0.25rem 0.75rem", background: "#f1f5f9", color: "#1e3a5f", borderRadius: 4, fontSize: "0.8125rem" },
   editBtn:   { padding: "0.25rem 0.75rem", background: "#eff6ff", color: "#2563eb", borderRadius: 4, fontSize: "0.8125rem" },
+
+  // モバイル用カードレイアウト
+  mobileList:      { display: "flex", flexDirection: "column", gap: "0.625rem" },
+  mobileCard:      { background: "#fff", borderRadius: 8, padding: "0.875rem 1rem", boxShadow: "0 1px 3px rgba(0,0,0,0.08)", border: "1px solid #f1f5f9" },
+  mobileCardDup:   { background: "#fffbeb", border: "1px solid #fcd34d" },
+  mobileCardTop:   { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.25rem" },
+  mobileNameRow:   { display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" },
+  mobileName:      { fontWeight: 700, fontSize: "1rem", color: "#1e293b" },
+  mobileDetailBtn: { padding: "0.25rem 0.75rem", background: "#f1f5f9", color: "#1e3a5f", borderRadius: 4, fontSize: "0.8125rem", flexShrink: 0 },
+  mobileCompany:   { fontSize: "0.875rem", color: "#64748b", marginBottom: "0.25rem" },
+  mobileEmail:     { fontSize: "0.875rem", color: "#2563eb", display: "block", marginBottom: "0.5rem", wordBreak: "break-all" },
+  mobileBottom:    { display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "0.25rem" },
+  mobileDate:      { fontSize: "0.75rem", color: "#94a3b8" },
+  mobileActions:   { display: "flex", gap: "0.5rem", alignItems: "center" },
 };
