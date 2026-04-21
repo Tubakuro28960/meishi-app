@@ -164,7 +164,7 @@ export default function TemplateForm({
             setValues((p) => ({ ...p, subject_template: e.target.value }))
           }
           onFocus={() => setLastFocused("subject")}
-          placeholder="例：{{company}} {{name}}様 - 名刺交換のお礼"
+          placeholder="例：{{会社名}} {{氏名}}様 - 名刺交換のお礼"
           style={s.input}
         />
       </div>
@@ -180,7 +180,7 @@ export default function TemplateForm({
           }
           onFocus={() => setLastFocused("body")}
           rows={10}
-          placeholder={"{{name}}様\n\n先日はお名刺を交換いただき..."}
+          placeholder={"{{氏名}}様\n\n先日はお名刺を交換いただき..."}
           style={s.textarea}
         />
       </div>

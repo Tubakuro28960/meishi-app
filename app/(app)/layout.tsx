@@ -6,7 +6,6 @@ import LogoutButton from "@/components/LogoutButton";
 export const dynamic = "force-dynamic";
 
 const navItems = [
-  { href: "/dashboard", label: "ダッシュボード" },
   { href: "/cards", label: "名刺一覧" },
   { href: "/cards/new", label: "名刺追加" },
   { href: "/templates", label: "テンプレート" },

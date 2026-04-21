@@ -11,14 +11,13 @@ export const TEMPLATE_VARIABLES: {
   key: string;
   label: string;
   example: string;
-  description: string;
 }[] = [
-  { key: "{{name}}",        label: "氏名",           example: "山田 太郎",           description: "名刺から読み取った氏名" },
-  { key: "{{company}}",     label: "会社名",          example: "株式会社サンプル",      description: "会社名" },
-  { key: "{{department}}", label: "部署名",           example: "営業部",              description: "部署名" },
-  { key: "{{position}}",   label: "役職",             example: "部長",                description: "役職" },
-  { key: "{{email}}",      label: "メールアドレス",    example: "yamada@example.com",  description: "宛先メールアドレス" },
-  { key: "{{sender_name}}",label: "送信者名",         example: "田中 花子",            description: "送信者（あなた）の名前" },
+  { key: "{{氏名}}",    label: "氏名",     example: "山田 太郎" },
+  { key: "{{会社名}}",  label: "会社名",   example: "株式会社サンプル" },
+  { key: "{{部署}}",    label: "部署",     example: "営業部" },
+  { key: "{{役職}}",    label: "役職",     example: "部長" },
+  { key: "{{メール}}",  label: "メール",   example: "yamada@example.com" },
+  { key: "{{送信者名}}",label: "送信者名", example: "田中 花子" },
 ];
 
 export const PREVIEW_SAMPLE: TemplateVars = {
@@ -32,6 +31,14 @@ export const PREVIEW_SAMPLE: TemplateVars = {
 
 export function renderTemplate(template: string, vars: TemplateVars): string {
   return template
+    // 日本語変数（新形式）
+    .replace(/\{\{氏名\}\}/g,    vars.name        ?? "")
+    .replace(/\{\{会社名\}\}/g,  vars.company     ?? "")
+    .replace(/\{\{部署\}\}/g,    vars.department  ?? "")
+    .replace(/\{\{役職\}\}/g,    vars.position    ?? "")
+    .replace(/\{\{メール\}\}/g,  vars.email       ?? "")
+    .replace(/\{\{送信者名\}\}/g,vars.sender_name ?? "")
+    // 英語変数（既存テンプレートの後方互換）
     .replace(/\{\{name\}\}/g,        vars.name        ?? "")
     .replace(/\{\{full_name\}\}/g,   vars.name        ?? "")
     .replace(/\{\{company\}\}/g,     vars.company     ?? "")
@@ -45,15 +52,15 @@ export function renderTemplate(template: string, vars: TemplateVars): string {
 
 export const SAMPLE_TEMPLATE = {
   name: "名刺交換後のご挨拶",
-  subject_template: "{{company}} {{name}}様 - 名刺交換のお礼",
-  body_template: `{{name}}様
+  subject_template: "{{会社名}} {{氏名}}様 - 名刺交換のお礼",
+  body_template: `{{氏名}}様
 
 先日はお名刺を交換いただきありがとうございました。
-{{company}}にて{{department}}の{{position}}をされているとのこと、
+{{会社名}}にて{{部署}}の{{役職}}をされているとのこと、
 大変勉強になりました。
 
 今後ともどうぞよろしくお願いいたします。
 ご不明な点などございましたら、お気軽にご連絡ください。
 
-{{sender_name}}`,
+{{送信者名}}`,
 };
