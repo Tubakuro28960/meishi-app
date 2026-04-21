@@ -69,6 +69,39 @@ export async function createCard(
   redirect("/cards");
 }
 
+// リダイレクトなしでカードを保存し、IDを返す（メールアプリ連携用）
+export async function saveCardAndReturn(
+  data: CardFormValues
+): Promise<{ error: string } | { id: string }> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "ログインが必要です" };
+
+  const { raw_ocr_text, original_image_url, ...fields } = data;
+
+  const { count } = await supabase
+    .from("business_cards")
+    .select("*", { count: "exact", head: true })
+    .eq("user_id", user.id);
+
+  const { data: card, error } = await supabase
+    .from("business_cards")
+    .insert({
+      ...fields,
+      user_id: user.id,
+      card_index: (count ?? 0) + 1,
+      ...(raw_ocr_text !== undefined ? { raw_ocr_text } : {}),
+      ...(original_image_url !== undefined ? { original_image_url } : {}),
+    })
+    .select("id")
+    .single();
+
+  if (error) return { error: error.message };
+
+  revalidatePath("/cards");
+  return { id: card.id };
+}
+
 export async function updateCard(
   id: string,
   data: CardFormValues

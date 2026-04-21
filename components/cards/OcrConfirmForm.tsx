@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { createCard, createCardAndSend } from "@/lib/actions/cards";
+import { useRouter } from "next/navigation";
+import { createCard, saveCardAndReturn } from "@/lib/actions/cards";
 import { renderTemplate } from "@/lib/templates/render";
 import type { OcrParsed } from "@/lib/ocr/parse";
 import type { Template } from "@/types/database";
@@ -27,12 +28,17 @@ type Props = {
   onBack: () => void;
 };
 
-const FIELDS: { key: keyof EditableFields; label: string; type?: string; wide?: boolean; required?: boolean }[] = [
-  { key: "name",       label: "氏名",           required: false },
+const FIELDS: {
+  key: keyof EditableFields;
+  label: string;
+  type?: string;
+  wide?: boolean;
+}[] = [
+  { key: "name",       label: "氏名" },
   { key: "company",    label: "会社名" },
   { key: "department", label: "部署" },
   { key: "position",   label: "役職" },
-  { key: "email",      label: "メールアドレス", type: "email", wide: true, required: true },
+  { key: "email",      label: "メールアドレス", type: "email", wide: true },
   { key: "phone",      label: "電話番号",        type: "tel" },
   { key: "address",    label: "住所",            wide: true },
   { key: "website",    label: "Webサイト",       type: "url", wide: true },
@@ -47,6 +53,8 @@ export default function OcrConfirmForm({
   templates,
   onBack,
 }: Props) {
+  const router = useRouter();
+
   const [values, setValues] = useState<EditableFields>({
     name:       initial.name,
     company:    initial.company,
@@ -61,16 +69,28 @@ export default function OcrConfirmForm({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // 送信オプション
   const defaultTemplate = templates.find((t) => t.is_default) ?? templates[0] ?? null;
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(
     defaultTemplate?.id ?? null
   );
-  const [sendTiming, setSendTiming] = useState<"immediate" | "scheduled">("immediate");
-  const [scheduledAt, setScheduledAt] = useState("");
 
   const emailEmpty = !values.email.trim();
   const selectedTemplate = templates.find((t) => t.id === selectedTemplateId) ?? null;
+
+  const vars = {
+    name:       values.name,
+    company:    values.company,
+    department: values.department,
+    position:   values.position,
+    email:      values.email,
+    sender_name: null,
+  };
+  const previewSubject = selectedTemplate
+    ? renderTemplate(selectedTemplate.subject_template, vars)
+    : "";
+  const previewBody = selectedTemplate
+    ? renderTemplate(selectedTemplate.body_template, vars)
+    : "";
 
   function set(key: keyof EditableFields) {
     return (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
@@ -80,84 +100,45 @@ export default function OcrConfirmForm({
   async function handleSaveOnly() {
     setError(null);
     setLoading(true);
-
     const result = await createCard({
       ...values,
       raw_ocr_text: rawText,
       original_image_url: originalImageUrl,
     });
-
     if (result?.error) {
       setError(result.error);
       setLoading(false);
     }
+    // createCard は成功時に redirect("/cards") するのでここには戻らない
   }
 
-  async function handleSaveAndSend() {
+  async function handleSaveAndOpenMail() {
     if (!selectedTemplate || !values.email.trim()) return;
     setError(null);
     setLoading(true);
 
-    const vars = {
-      name:        values.name,
-      company:     values.company,
-      department:  values.department,
-      position:    values.position,
-      email:       values.email,
-      sender_name: null,
-    };
-    const subject = renderTemplate(selectedTemplate.subject_template, vars);
-    const body    = renderTemplate(selectedTemplate.body_template, vars);
+    const result = await saveCardAndReturn({
+      ...values,
+      raw_ocr_text: rawText,
+      original_image_url: originalImageUrl,
+    });
 
-    if (sendTiming === "immediate") {
-      // カード保存後にGmailの作成画面を開く
-      const result = await createCard({
-        ...values,
-        raw_ocr_text: rawText,
-        original_image_url: originalImageUrl,
-      });
-
-      if (result?.error) {
-        setError(result.error);
-        setLoading(false);
-        return;
-      }
-
-      const gmailUrl =
-        "https://mail.google.com/mail/?view=cm&fs=1" +
-        "&to=" + encodeURIComponent(values.email) +
-        "&su=" + encodeURIComponent(subject) +
-        "&body=" + encodeURIComponent(body);
-
-      window.open(gmailUrl, "_blank");
-    } else {
-      // 予約送信はバックエンドで処理
-      if (!scheduledAt) {
-        setError("送信日時を指定してください");
-        setLoading(false);
-        return;
-      }
-
-      const result = await createCardAndSend(
-        {
-          ...values,
-          raw_ocr_text: rawText,
-          original_image_url: originalImageUrl,
-        },
-        {
-          template_id: selectedTemplate.id,
-          subject,
-          body,
-          timing: sendTiming,
-          scheduled_at: scheduledAt,
-        }
-      );
-
-      if (result?.error) {
-        setError(result.error);
-        setLoading(false);
-      }
+    if ("error" in result) {
+      setError(result.error);
+      setLoading(false);
+      return;
     }
+
+    // mailto リンクでデフォルトメールアプリを開く
+    const mailto =
+      "mailto:" + encodeURIComponent(values.email) +
+      "?subject=" + encodeURIComponent(previewSubject) +
+      "&body=" + encodeURIComponent(previewBody);
+
+    window.location.href = mailto;
+
+    // 少し待ってから名刺一覧へ遷移
+    setTimeout(() => router.push("/cards"), 500);
   }
 
   const canSend = !!selectedTemplate && !emailEmpty;
@@ -165,56 +146,57 @@ export default function OcrConfirmForm({
   return (
     <div style={s.root}>
       <div style={s.layout}>
-        {/* 画像プレビュー */}
-        {imagePreviewUrl && (
-          <div style={s.imagePane}>
-            <p style={s.imageLabel}>名刺画像</p>
-            <img src={imagePreviewUrl} alt="名刺" style={s.image} />
-          </div>
-        )}
-
-        {/* フォーム */}
-        <div style={s.formPane}>
-          {emailEmpty && (
-            <div style={s.warning} role="alert">
-              ⚠ メールアドレスが読み取れませんでした。確認して手動で入力してください。
+        {/* 左カラム: 画像 + フォーム */}
+        <div style={s.leftCol}>
+          {imagePreviewUrl && (
+            <div style={s.imagePane}>
+              <p style={s.sectionLabel}>名刺画像</p>
+              <img src={imagePreviewUrl} alt="名刺" style={s.image} />
             </div>
           )}
 
-          <div style={s.grid}>
-            {FIELDS.map(({ key, label, type, wide }) => (
-              <div key={key} style={wide ? s.fullCol : s.halfCol}>
-                <label style={s.label}>
-                  {label}
-                  {key === "email" && <span style={s.required}> *</span>}
-                </label>
-                {key === "memo" ? (
-                  <textarea
-                    value={values[key]}
-                    onChange={set(key)}
-                    rows={3}
-                    style={s.textarea}
-                  />
-                ) : (
-                  <input
-                    type={type ?? "text"}
-                    value={values[key]}
-                    onChange={set(key)}
-                    style={{
-                      ...s.input,
-                      ...(key === "email" && emailEmpty ? s.inputWarn : {}),
-                    }}
-                  />
-                )}
+          <div style={s.formCard}>
+            {emailEmpty && (
+              <div style={s.warning} role="alert">
+                ⚠ メールアドレスが読み取れませんでした。手動で入力してください。
               </div>
-            ))}
+            )}
+            <div style={s.grid}>
+              {FIELDS.map(({ key, label, type, wide }) => (
+                <div key={key} style={wide ? s.fullCol : s.halfCol}>
+                  <label style={s.label}>
+                    {label}
+                    {key === "email" && <span style={s.required}> *</span>}
+                  </label>
+                  {key === "memo" ? (
+                    <textarea
+                      value={values[key]}
+                      onChange={set(key)}
+                      rows={2}
+                      style={s.textarea}
+                    />
+                  ) : (
+                    <input
+                      type={type ?? "text"}
+                      value={values[key]}
+                      onChange={set(key)}
+                      style={{
+                        ...s.input,
+                        ...(key === "email" && emailEmpty ? s.inputWarn : {}),
+                      }}
+                    />
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
+        </div>
 
-          {/* 送信設定 */}
-          <div style={s.sendSection}>
-            <p style={s.sendTitle}>メール送信設定</p>
+        {/* 右カラム: テンプレート選択 + プレビュー */}
+        <div style={s.rightCol}>
+          <div style={s.templateCard}>
+            <p style={s.sectionLabel}>テンプレートを選ぶ</p>
 
-            {/* テンプレート選択 */}
             <div style={s.tmplList}>
               {templates.map((t) => (
                 <label
@@ -234,7 +216,6 @@ export default function OcrConfirmForm({
                   <div style={s.tmplInfo}>
                     <span style={s.tmplName}>{t.name}</span>
                     {t.is_default && <span style={s.badge}>デフォルト</span>}
-                    <span style={s.tmplSubject}>件名: {t.subject_template || "（未設定）"}</span>
                   </div>
                 </label>
               ))}
@@ -255,65 +236,59 @@ export default function OcrConfirmForm({
               </label>
             </div>
 
-            {/* 送信タイミング */}
-            {selectedTemplateId && (
-              <div style={s.timingSection}>
-                <span style={s.timingLabel}>送信タイミング:</span>
-                {(["immediate", "scheduled"] as const).map((val) => (
-                  <label key={val} style={s.timingOption}>
-                    <input
-                      type="radio"
-                      name="ocr-timing"
-                      checked={sendTiming === val}
-                      onChange={() => setSendTiming(val)}
-                    />
-                    {val === "immediate" ? "即時送信" : "予約送信"}
-                  </label>
-                ))}
-                {sendTiming === "scheduled" && (
-                  <input
-                    type="datetime-local"
-                    value={scheduledAt}
-                    onChange={(e) => setScheduledAt(e.target.value)}
-                    min={new Date(Date.now() + 60_000).toISOString().slice(0, 16)}
-                    style={s.datetimeInput}
-                  />
-                )}
+            {/* プレビュー */}
+            {selectedTemplate && (
+              <div style={s.preview}>
+                <p style={s.previewLabel}>プレビュー</p>
+                <div style={s.previewSubject}>
+                  <span style={s.previewSubjectTag}>件名</span>
+                  <span style={s.previewSubjectText}>
+                    {previewSubject || <em style={{ color: "#94a3b8" }}>（未設定）</em>}
+                  </span>
+                </div>
+                <div style={s.previewBodyWrap}>
+                  <span style={s.previewBodyTag}>本文</span>
+                  <pre style={s.previewBody}>{previewBody || "（未設定）"}</pre>
+                </div>
               </div>
             )}
           </div>
+        </div>
+      </div>
 
-          {error && <p style={s.error}>{error}</p>}
+      {error && <p style={s.error}>{error}</p>}
 
-          <div style={s.actions}>
-            <button type="button" onClick={onBack} style={s.backBtn} disabled={loading}>
-              ← 撮り直す
-            </button>
+      {/* アクションボタン */}
+      <div style={s.actions}>
+        <button type="button" onClick={onBack} style={s.backBtn} disabled={loading}>
+          ← 撮り直す
+        </button>
+        <div style={s.actionRight}>
+          {selectedTemplateId !== null && (
             <button
               type="button"
-              onClick={selectedTemplateId ? handleSaveAndSend : handleSaveOnly}
-              disabled={
-                loading ||
-                (!!selectedTemplateId && (!canSend || (sendTiming === "scheduled" && !scheduledAt)))
-              }
-              style={{
-                ...s.sendBtn,
-                ...(selectedTemplateId && (!canSend || (sendTiming === "scheduled" && !scheduledAt))
-                  ? s.sendBtnDisabled
-                  : {}),
-                ...(selectedTemplateId && sendTiming === "scheduled" ? s.sendBtnScheduled : {}),
-                ...(!selectedTemplateId ? s.saveOnlyStyle : {}),
-              }}
+              onClick={handleSaveOnly}
+              disabled={loading}
+              style={s.saveOnlyBtn}
             >
-              {loading
-                ? "処理中..."
-                : !selectedTemplateId
-                ? "保存する"
-                : sendTiming === "scheduled"
-                ? "保存して予約送信"
-                : "保存して即時送信"}
+              保存のみ
             </button>
-          </div>
+          )}
+          <button
+            type="button"
+            onClick={selectedTemplateId ? handleSaveAndOpenMail : handleSaveOnly}
+            disabled={loading || (selectedTemplateId !== null && !canSend)}
+            style={{
+              ...s.mainBtn,
+              ...(selectedTemplateId !== null && !canSend ? s.mainBtnDisabled : {}),
+            }}
+          >
+            {loading
+              ? "処理中..."
+              : selectedTemplateId
+              ? "保存してメールアプリを開く →"
+              : "保存する"}
+          </button>
         </div>
       </div>
     </div>
@@ -321,155 +296,211 @@ export default function OcrConfirmForm({
 }
 
 const s: Record<string, React.CSSProperties> = {
-  root: {},
+  root: { display: "flex", flexDirection: "column", gap: "1.25rem" },
+
   layout: {
     display: "flex",
     gap: "1.5rem",
     alignItems: "flex-start",
     flexWrap: "wrap",
   },
-  imagePane: {
-    width: 240,
-    flexShrink: 0,
+
+  leftCol: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "1rem",
+    flex: "1 1 360px",
+    minWidth: 0,
   },
-  imageLabel: {
+
+  rightCol: {
+    flex: "1 1 320px",
+    minWidth: 0,
+  },
+
+  imagePane: { marginBottom: "0.25rem" },
+  sectionLabel: {
     fontSize: "0.8125rem",
-    fontWeight: 600,
+    fontWeight: 700,
     color: "#64748b",
+    textTransform: "uppercase",
+    letterSpacing: "0.04em",
     marginBottom: "0.5rem",
   },
   image: {
     width: "100%",
-    borderRadius: 4,
-    border: "1px solid #e2e8f0",
+    maxHeight: 220,
     objectFit: "contain",
+    borderRadius: 6,
+    border: "1px solid #e2e8f0",
+    background: "#f8fafc",
   },
-  formPane: {
-    flex: 1,
-    minWidth: 280,
+
+  formCard: {
     background: "#fff",
     borderRadius: 8,
-    padding: "1.5rem",
+    padding: "1.25rem",
     boxShadow: "0 1px 4px rgba(0,0,0,0.08)",
   },
+
   warning: {
     background: "#fffbeb",
     border: "1px solid #fcd34d",
     color: "#92400e",
     borderRadius: 4,
-    padding: "0.625rem 0.875rem",
-    fontSize: "0.875rem",
+    padding: "0.5rem 0.75rem",
+    fontSize: "0.8125rem",
     marginBottom: "1rem",
   },
+
   grid: {
     display: "grid",
     gridTemplateColumns: "1fr 1fr",
-    gap: "0.875rem 1rem",
+    gap: "0.75rem 1rem",
   },
-  halfCol: { display: "flex", flexDirection: "column", gap: "0.25rem" },
+  halfCol: { display: "flex", flexDirection: "column", gap: "0.2rem" },
   fullCol: {
     display: "flex",
     flexDirection: "column",
-    gap: "0.25rem",
+    gap: "0.2rem",
     gridColumn: "1 / -1",
   },
-  label: { fontSize: "0.8125rem", fontWeight: 600, color: "#374151" },
+  label: { fontSize: "0.75rem", fontWeight: 600, color: "#374151" },
   required: { color: "#dc2626" },
   input: {
-    padding: "0.5rem 0.625rem",
+    padding: "0.4rem 0.6rem",
     border: "1px solid #d1d5db",
     borderRadius: 4,
-    fontSize: "0.9375rem",
+    fontSize: "0.9rem",
   },
-  inputWarn: {
-    borderColor: "#fcd34d",
-    background: "#fffbeb",
-  },
+  inputWarn: { borderColor: "#fcd34d", background: "#fffbeb" },
   textarea: {
-    padding: "0.5rem 0.625rem",
+    padding: "0.4rem 0.6rem",
     border: "1px solid #d1d5db",
     borderRadius: 4,
-    fontSize: "0.9375rem",
+    fontSize: "0.9rem",
     resize: "vertical",
   },
 
-  // 送信オプション
-  sendSection: {
-    marginTop: "1.5rem",
-    paddingTop: "1.25rem",
-    borderTop: "1px solid #f1f5f9",
+  // テンプレートカード
+  templateCard: {
+    background: "#fff",
+    borderRadius: 8,
+    padding: "1.25rem",
+    boxShadow: "0 1px 4px rgba(0,0,0,0.08)",
+    position: "sticky",
+    top: 72,
   },
-  sendTitle: {
-    fontSize: "0.9rem",
-    fontWeight: 700,
-    color: "#374151",
-    marginBottom: "0.75rem",
-  },
+
   tmplList: {
     display: "flex",
     flexDirection: "column",
     gap: "0.375rem",
-    marginBottom: "0.75rem",
+    marginBottom: "1rem",
   },
   tmplRow: {
     display: "flex",
-    alignItems: "flex-start",
+    alignItems: "center",
     gap: "0.625rem",
-    padding: "0.625rem 0.75rem",
+    padding: "0.5rem 0.75rem",
     border: "1px solid #e2e8f0",
     borderRadius: 6,
     cursor: "pointer",
     background: "#f8fafc",
+    transition: "border-color 0.1s",
   },
   tmplRowSelected: {
     border: "1px solid #93c5fd",
     background: "#eff6ff",
   },
-  radio: { marginTop: 3, flexShrink: 0, cursor: "pointer" },
-  tmplInfo: { display: "flex", flexDirection: "column", gap: "0.125rem", flex: 1 },
-  tmplName: { fontWeight: 600, fontSize: "0.9rem", color: "#1e293b" },
+  radio: { flexShrink: 0, cursor: "pointer" },
+  tmplInfo: { display: "flex", alignItems: "center", gap: "0.375rem", flex: 1 },
+  tmplName: { fontWeight: 600, fontSize: "0.875rem", color: "#1e293b" },
   badge: {
-    display: "inline-block",
     padding: "0.1rem 0.4rem",
     background: "#dbeafe",
     color: "#1d4ed8",
     borderRadius: 20,
     fontSize: "0.7rem",
     fontWeight: 600,
-    marginLeft: "0.375rem",
   },
-  tmplSubject: { fontSize: "0.8rem", color: "#64748b" },
   tmplNone: { fontSize: "0.875rem", color: "#64748b" },
 
-  timingSection: {
-    display: "flex",
-    alignItems: "center",
-    gap: "1rem",
-    padding: "0.625rem 0.75rem",
+  // プレビュー
+  preview: {
     background: "#f8fafc",
-    borderRadius: 4,
-    flexWrap: "wrap",
+    border: "1px solid #e2e8f0",
+    borderRadius: 6,
+    padding: "0.875rem",
   },
-  timingLabel: { fontSize: "0.875rem", fontWeight: 600, color: "#374151", flexShrink: 0 },
-  timingOption: { display: "flex", alignItems: "center", gap: "0.375rem", fontSize: "0.875rem", cursor: "pointer" },
-  datetimeInput: {
-    padding: "0.375rem 0.625rem",
-    border: "1px solid #d1d5db",
-    borderRadius: 4,
+  previewLabel: {
+    fontSize: "0.75rem",
+    fontWeight: 700,
+    color: "#64748b",
+    textTransform: "uppercase",
+    letterSpacing: "0.04em",
+    marginBottom: "0.625rem",
+  },
+  previewSubject: {
+    display: "flex",
+    alignItems: "baseline",
+    gap: "0.5rem",
+    marginBottom: "0.625rem",
+  },
+  previewSubjectTag: {
+    fontSize: "0.7rem",
+    fontWeight: 700,
+    color: "#94a3b8",
+    flexShrink: 0,
+    background: "#e2e8f0",
+    borderRadius: 3,
+    padding: "0.1rem 0.35rem",
+  },
+  previewSubjectText: {
     fontSize: "0.875rem",
+    fontWeight: 600,
     color: "#1e293b",
+    wordBreak: "break-all",
+  },
+  previewBodyWrap: {
+    display: "flex",
+    gap: "0.5rem",
+    alignItems: "flex-start",
+  },
+  previewBodyTag: {
+    fontSize: "0.7rem",
+    fontWeight: 700,
+    color: "#94a3b8",
+    flexShrink: 0,
+    background: "#e2e8f0",
+    borderRadius: 3,
+    padding: "0.1rem 0.35rem",
+    marginTop: 2,
+  },
+  previewBody: {
+    fontSize: "0.8125rem",
+    color: "#475569",
+    whiteSpace: "pre-wrap",
+    wordBreak: "break-word",
+    margin: 0,
+    fontFamily: "inherit",
+    lineHeight: 1.7,
+    maxHeight: 240,
+    overflowY: "auto",
   },
 
-  error: {
-    color: "#dc2626",
-    fontSize: "0.875rem",
-    marginTop: "0.75rem",
-  },
+  error: { color: "#dc2626", fontSize: "0.875rem" },
+
   actions: {
     display: "flex",
     justifyContent: "space-between",
     alignItems: "center",
-    marginTop: "1.5rem",
+    paddingTop: "0.5rem",
+  },
+  actionRight: {
+    display: "flex",
+    gap: "0.75rem",
+    alignItems: "center",
   },
   backBtn: {
     padding: "0.5rem 1rem",
@@ -480,7 +511,16 @@ const s: Record<string, React.CSSProperties> = {
     color: "#374151",
     cursor: "pointer",
   },
-  sendBtn: {
+  saveOnlyBtn: {
+    padding: "0.5rem 1rem",
+    background: "transparent",
+    border: "1px solid #d1d5db",
+    borderRadius: 4,
+    fontSize: "0.875rem",
+    color: "#374151",
+    cursor: "pointer",
+  },
+  mainBtn: {
     padding: "0.5rem 1.5rem",
     background: "#2563eb",
     color: "#fff",
@@ -490,14 +530,8 @@ const s: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     cursor: "pointer",
   },
-  sendBtnDisabled: {
+  mainBtnDisabled: {
     background: "#93c5fd",
     cursor: "not-allowed",
-  },
-  sendBtnScheduled: {
-    background: "#7c3aed",
-  },
-  saveOnlyStyle: {
-    background: "#475569",
   },
 };

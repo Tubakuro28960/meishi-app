@@ -1,34 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { createCardsAndSchedule } from "@/lib/actions/cards";
 import { useRouter } from "next/navigation";
+import { createCardsAndSchedule } from "@/lib/actions/cards";
 import { renderTemplate } from "@/lib/templates/render";
 import type { OcrParsed } from "@/lib/ocr/parse";
 import type { Template } from "@/types/database";
 
 type EditableFields = {
-  name: string;
-  company: string;
-  department: string;
-  position: string;
-  email: string;
-  phone: string;
-  address: string;
-  website: string;
-  memo: string;
+  name: string; company: string; department: string; position: string;
+  email: string; phone: string; address: string; website: string; memo: string;
 };
 
-type CardSendConfig = {
-  selectedTemplateId: string | null;
-  sendTiming: "immediate" | "scheduled";
-  scheduledAt: string;
-};
-
-type CardData = {
-  rawText: string;
-  structured: OcrParsed;
-};
+type CardData = { rawText: string; structured: OcrParsed };
 
 type Props = {
   imagePreviewUrl: string | null;
@@ -44,10 +28,10 @@ const FIELDS: { key: keyof EditableFields; label: string; type?: string; wide?: 
   { key: "department", label: "部署" },
   { key: "position",   label: "役職" },
   { key: "email",      label: "メールアドレス", type: "email", wide: true },
-  { key: "phone",      label: "電話番号",        type: "tel" },
-  { key: "address",    label: "住所",            wide: true },
-  { key: "website",    label: "Webサイト",       type: "url", wide: true },
-  { key: "memo",       label: "備考",            wide: true },
+  { key: "phone",      label: "電話番号", type: "tel" },
+  { key: "address",    label: "住所", wide: true },
+  { key: "website",    label: "Webサイト", type: "url", wide: true },
+  { key: "memo",       label: "備考", wide: true },
 ];
 
 function initFields(s: OcrParsed): EditableFields {
@@ -58,73 +42,42 @@ function initFields(s: OcrParsed): EditableFields {
   };
 }
 
-function initSendConfig(templates: Template[]): CardSendConfig {
-  const defaultTemplate = templates.find((t) => t.is_default) ?? templates[0] ?? null;
-  return {
-    selectedTemplateId: defaultTemplate?.id ?? null,
-    sendTiming: "immediate",
-    scheduledAt: "",
-  };
-}
-
-type GmailLink = { label: string; url: string };
+type MailtoLink = { label: string; href: string };
 
 export default function MultiOcrConfirm({ imagePreviewUrl, originalImageUrl, cards, templates, onBack }: Props) {
   const router = useRouter();
   const [allValues, setAllValues] = useState<EditableFields[]>(
     cards.map(c => initFields(c.structured))
   );
-  const [allSendConfigs, setAllSendConfigs] = useState<CardSendConfig[]>(
-    cards.map(() => initSendConfig(templates))
-  );
+  const [selectedTemplateIds, setSelectedTemplateIds] = useState<(string | null)[]>(() => {
+    const def = templates.find(t => t.is_default) ?? templates[0] ?? null;
+    return cards.map(() => def?.id ?? null);
+  });
+  const [expanded, setExpanded] = useState<number[]>(cards.map((_, i) => i));
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [expanded, setExpanded] = useState<number[]>(cards.map((_, i) => i));
-  const [gmailLinks, setGmailLinks] = useState<GmailLink[] | null>(null);
+  const [mailtoLinks, setMailtoLinks] = useState<MailtoLink[] | null>(null);
 
-  function setField(cardIdx: number, key: keyof EditableFields) {
-    return (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-      setAllValues(prev => prev.map((v, i) =>
-        i === cardIdx ? { ...v, [key]: e.target.value } : v
-      ));
-    };
-  }
-
-  function setSendConfig(cardIdx: number, patch: Partial<CardSendConfig>) {
-    setAllSendConfigs(prev => prev.map((c, i) =>
-      i === cardIdx ? { ...c, ...patch } : c
-    ));
+  function setField(idx: number, key: keyof EditableFields) {
+    return (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
+      setAllValues(prev => prev.map((v, i) => i === idx ? { ...v, [key]: e.target.value } : v));
   }
 
   function toggleExpand(i: number) {
-    setExpanded(prev =>
-      prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i]
-    );
+    setExpanded(prev => prev.includes(i) ? prev.filter(x => x !== i) : [...prev, i]);
   }
 
   async function handleSubmit() {
     setError(null);
-
-    for (let i = 0; i < allValues.length; i++) {
-      const cfg = allSendConfigs[i];
-      if (cfg.selectedTemplateId && cfg.sendTiming === "scheduled" && !cfg.scheduledAt) {
-        setError(`名刺 ${i + 1}: 予約送信の日時を入力してください`);
-        setExpanded(prev => prev.includes(i) ? prev : [...prev, i]);
-        return;
-      }
-    }
-
     setLoading(true);
 
-    const links: GmailLink[] = [];
+    const links: MailtoLink[] = [];
 
     const payload = allValues.map((v, i) => {
-      const cfg = allSendConfigs[i];
-      const template = templates.find(t => t.id === cfg.selectedTemplateId) ?? null;
+      const templateId = selectedTemplateIds[i];
+      const template = templates.find(t => t.id === templateId) ?? null;
 
-      let scheduledSendData: Parameters<typeof createCardsAndSchedule>[0][number]["scheduledSendData"] = undefined;
-
-      if (template && v.email) {
+      if (template && v.email.trim()) {
         const vars = {
           name: v.name, company: v.company, department: v.department,
           position: v.position, email: v.email, sender_name: null,
@@ -132,23 +85,13 @@ export default function MultiOcrConfirm({ imagePreviewUrl, originalImageUrl, car
         const subject = renderTemplate(template.subject_template, vars);
         const body    = renderTemplate(template.body_template, vars);
 
-        if (cfg.sendTiming === "scheduled") {
-          scheduledSendData = {
-            template_id: template.id,
-            subject,
-            body,
-            scheduled_at: cfg.scheduledAt,
-          };
-        } else {
-          // 即時送信はGmailリンクをクライアントで開く
-          const gmailUrl =
-            "https://mail.google.com/mail/?view=cm&fs=1" +
-            "&to=" + encodeURIComponent(v.email) +
-            "&su=" + encodeURIComponent(subject) +
-            "&body=" + encodeURIComponent(body);
-          const label = [v.name, v.company].filter(Boolean).join(" / ") || `名刺 ${i + 1}`;
-          links.push({ label, url: gmailUrl });
-        }
+        const href =
+          "mailto:" + encodeURIComponent(v.email) +
+          "?subject=" + encodeURIComponent(subject) +
+          "&body=" + encodeURIComponent(body);
+
+        const label = [v.name, v.company].filter(Boolean).join(" / ") || `名刺 ${i + 1}`;
+        links.push({ label, href });
       }
 
       return {
@@ -157,7 +100,7 @@ export default function MultiOcrConfirm({ imagePreviewUrl, originalImageUrl, car
           raw_ocr_text: cards[i].rawText,
           original_image_url: originalImageUrl,
         },
-        scheduledSendData,
+        scheduledSendData: undefined,
       };
     });
 
@@ -169,26 +112,29 @@ export default function MultiOcrConfirm({ imagePreviewUrl, originalImageUrl, car
     }
 
     if (links.length > 0) {
-      setGmailLinks(links);
+      setMailtoLinks(links);
       setLoading(false);
     } else {
       router.push("/cards");
     }
   }
 
-  const sendCount = allSendConfigs.filter((cfg, i) => cfg.selectedTemplateId && allValues[i].email).length;
+  const sendCount = selectedTemplateIds.filter(
+    (id, i) => id !== null && allValues[i].email.trim()
+  ).length;
 
-  if (gmailLinks) {
+  // 保存後 → メールリンク画面
+  if (mailtoLinks) {
     return (
-      <div style={s.gmailScreen}>
-        <p style={s.gmailTitle}>✅ {allValues.length} 枚を保存しました</p>
-        <p style={s.gmailSubtitle}>以下のボタンからGmailで送信してください</p>
-        <div style={s.gmailList}>
-          {gmailLinks.map((link, i) => (
-            <div key={i} style={s.gmailRow}>
-              <span style={s.gmailLabel}>{link.label}</span>
-              <a href={link.url} target="_blank" rel="noopener noreferrer" style={s.gmailBtn}>
-                Gmailで送信 →
+      <div style={s.resultCard}>
+        <p style={s.resultTitle}>✅ {allValues.length} 枚を保存しました</p>
+        <p style={s.resultSub}>以下のボタンからメールアプリを開いて送信できます</p>
+        <div style={s.linkList}>
+          {mailtoLinks.map((link, i) => (
+            <div key={i} style={s.linkRow}>
+              <span style={s.linkLabel}>{link.label}</span>
+              <a href={link.href} style={s.mailBtn}>
+                メールアプリを開く →
               </a>
             </div>
           ))}
@@ -210,26 +156,27 @@ export default function MultiOcrConfirm({ imagePreviewUrl, originalImageUrl, car
       )}
 
       <div style={s.cardList}>
-        {allValues.map((values, cardIdx) => {
-          const cfg = allSendConfigs[cardIdx];
-          const isOpen = expanded.includes(cardIdx);
+        {allValues.map((values, idx) => {
+          const isOpen = expanded.includes(idx);
           const emailEmpty = !values.email.trim();
           const summary = [values.name, values.company].filter(Boolean).join(" / ") || "（未入力）";
-          const selectedTemplate = templates.find(t => t.id === cfg.selectedTemplateId) ?? null;
+          const templateId = selectedTemplateIds[idx];
+          const selectedTemplate = templates.find(t => t.id === templateId) ?? null;
+
+          const vars = selectedTemplate ? {
+            name: values.name, company: values.company, department: values.department,
+            position: values.position, email: values.email, sender_name: null,
+          } : null;
+          const previewSubject = vars ? renderTemplate(selectedTemplate!.subject_template, vars) : "";
+          const previewBody    = vars ? renderTemplate(selectedTemplate!.body_template,    vars) : "";
 
           return (
-            <div key={cardIdx} style={s.card}>
-              <button
-                type="button"
-                onClick={() => toggleExpand(cardIdx)}
-                style={s.cardHeader}
-              >
-                <span style={s.cardTitle}>名刺 {cardIdx + 1}</span>
+            <div key={idx} style={s.card}>
+              <button type="button" onClick={() => toggleExpand(idx)} style={s.cardHeader}>
+                <span style={s.cardNum}>名刺 {idx + 1}</span>
                 <span style={s.cardSummary}>{summary}</span>
-                {cfg.selectedTemplateId && (
-                  <span style={s.sendBadge}>
-                    {cfg.sendTiming === "scheduled" ? "📅 予約" : "📨 即時"}
-                  </span>
+                {templateId && (
+                  <span style={s.sendBadge}>📨 送信あり</span>
                 )}
                 <span style={s.chevron}>{isOpen ? "▲" : "▼"}</span>
               </button>
@@ -237,8 +184,8 @@ export default function MultiOcrConfirm({ imagePreviewUrl, originalImageUrl, car
               {isOpen && (
                 <div style={s.cardBody}>
                   {emailEmpty && (
-                    <div style={s.warning} role="alert">
-                      ⚠ メールアドレスが読み取れませんでした。送信する場合は手動で入力してください。
+                    <div style={s.warning}>
+                      ⚠ メールアドレスが読み取れませんでした。手動で入力してください。
                     </div>
                   )}
 
@@ -247,93 +194,62 @@ export default function MultiOcrConfirm({ imagePreviewUrl, originalImageUrl, car
                       <div key={key} style={wide ? s.fullCol : s.halfCol}>
                         <label style={s.label}>{label}</label>
                         {key === "memo" ? (
-                          <textarea
-                            value={values[key]}
-                            onChange={setField(cardIdx, key)}
-                            rows={2}
-                            style={s.textarea}
-                          />
+                          <textarea value={values[key]} onChange={setField(idx, key)} rows={2} style={s.textarea} />
                         ) : (
                           <input
                             type={type ?? "text"}
                             value={values[key]}
-                            onChange={setField(cardIdx, key)}
-                            style={{
-                              ...s.input,
-                              ...(key === "email" && emailEmpty ? s.inputWarn : {}),
-                            }}
+                            onChange={setField(idx, key)}
+                            style={{ ...s.input, ...(key === "email" && emailEmpty ? s.inputWarn : {}) }}
                           />
                         )}
                       </div>
                     ))}
                   </div>
 
-                  {/* 送信設定（カードごと） */}
-                  <div style={s.sendSection}>
-                    <p style={s.sendTitle}>メール送信設定</p>
+                  {/* テンプレート選択 */}
+                  <div style={s.tmplSection}>
+                    <p style={s.tmplTitle}>テンプレートを選ぶ</p>
                     <div style={s.tmplList}>
-                      {templates.map((t) => (
-                        <label
-                          key={t.id}
-                          style={{
-                            ...s.tmplRow,
-                            ...(cfg.selectedTemplateId === t.id ? s.tmplRowSelected : {}),
-                          }}
-                        >
+                      {templates.map(t => (
+                        <label key={t.id} style={{ ...s.tmplRow, ...(templateId === t.id ? s.tmplRowSelected : {}) }}>
                           <input
                             type="radio"
-                            name={`template-${cardIdx}`}
-                            checked={cfg.selectedTemplateId === t.id}
-                            onChange={() => setSendConfig(cardIdx, { selectedTemplateId: t.id })}
+                            name={`template-${idx}`}
+                            checked={templateId === t.id}
+                            onChange={() => setSelectedTemplateIds(prev => prev.map((v, i) => i === idx ? t.id : v))}
                             style={s.radio}
                           />
                           <div style={s.tmplInfo}>
                             <span style={s.tmplName}>{t.name}</span>
                             {t.is_default && <span style={s.badge}>デフォルト</span>}
-                            <span style={s.tmplSubject}>件名: {t.subject_template || "（未設定）"}</span>
                           </div>
                         </label>
                       ))}
-                      <label
-                        style={{
-                          ...s.tmplRow,
-                          ...(cfg.selectedTemplateId === null ? s.tmplRowSelected : {}),
-                        }}
-                      >
+                      <label style={{ ...s.tmplRow, ...(templateId === null ? s.tmplRowSelected : {}) }}>
                         <input
                           type="radio"
-                          name={`template-${cardIdx}`}
-                          checked={cfg.selectedTemplateId === null}
-                          onChange={() => setSendConfig(cardIdx, { selectedTemplateId: null })}
+                          name={`template-${idx}`}
+                          checked={templateId === null}
+                          onChange={() => setSelectedTemplateIds(prev => prev.map((v, i) => i === idx ? null : v))}
                           style={s.radio}
                         />
                         <span style={s.tmplNone}>送信しない（保存のみ）</span>
                       </label>
                     </div>
 
+                    {/* プレビュー */}
                     {selectedTemplate && (
-                      <div style={s.timingSection}>
-                        <span style={s.timingLabel}>送信タイミング:</span>
-                        {(["immediate", "scheduled"] as const).map((val) => (
-                          <label key={val} style={s.timingOption}>
-                            <input
-                              type="radio"
-                              name={`timing-${cardIdx}`}
-                              checked={cfg.sendTiming === val}
-                              onChange={() => setSendConfig(cardIdx, { sendTiming: val })}
-                            />
-                            {val === "immediate" ? "即時送信" : "予約送信"}
-                          </label>
-                        ))}
-                        {cfg.sendTiming === "scheduled" && (
-                          <input
-                            type="datetime-local"
-                            value={cfg.scheduledAt}
-                            onChange={(e) => setSendConfig(cardIdx, { scheduledAt: e.target.value })}
-                            min={new Date(Date.now() + 60_000).toISOString().slice(0, 16)}
-                            style={s.datetimeInput}
-                          />
-                        )}
+                      <div style={s.preview}>
+                        <p style={s.previewLabel}>プレビュー</p>
+                        <div style={s.previewSubject}>
+                          <span style={s.previewTag}>件名</span>
+                          <span style={s.previewSubjectText}>{previewSubject || "（未設定）"}</span>
+                        </div>
+                        <div style={s.previewBodyWrap}>
+                          <span style={s.previewTag}>本文</span>
+                          <pre style={s.previewBody}>{previewBody || "（未設定）"}</pre>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -347,7 +263,7 @@ export default function MultiOcrConfirm({ imagePreviewUrl, originalImageUrl, car
       {error && <p style={s.error}>{error}</p>}
 
       <div style={s.actions}>
-        <button type="button" onClick={onBack} style={s.backBtn}>
+        <button type="button" onClick={onBack} style={s.backBtn} disabled={loading}>
           ← 撮り直す
         </button>
         <button
@@ -359,8 +275,8 @@ export default function MultiOcrConfirm({ imagePreviewUrl, originalImageUrl, car
           {loading
             ? "処理中..."
             : sendCount > 0
-            ? `全 ${allValues.length} 枚を保存（${sendCount} 件送信）`
-            : `全 ${allValues.length} 枚を保存`}
+            ? `全 ${allValues.length} 枚を保存してメールアプリを開く →`
+            : `全 ${allValues.length} 枚を保存する`}
         </button>
       </div>
     </div>
@@ -368,268 +284,61 @@ export default function MultiOcrConfirm({ imagePreviewUrl, originalImageUrl, car
 }
 
 const s: Record<string, React.CSSProperties> = {
-  imageRow: {
-    marginBottom: "1.5rem",
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    gap: "0.5rem",
-  },
-  previewImg: {
-    maxHeight: 220,
-    maxWidth: "100%",
-    objectFit: "contain",
-    borderRadius: 4,
-    border: "1px solid #e2e8f0",
-  },
-  imageCaption: {
-    fontSize: "0.8125rem",
-    color: "#94a3b8",
-  },
-  cardList: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "0.75rem",
-    marginBottom: "1.5rem",
-  },
-  card: {
-    border: "1px solid #e2e8f0",
-    borderRadius: 8,
-    overflow: "hidden",
-    background: "#fff",
-    boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
-  },
-  cardHeader: {
-    width: "100%",
-    display: "flex",
-    alignItems: "center",
-    gap: "0.75rem",
-    padding: "0.875rem 1rem",
-    background: "#f8fafc",
-    border: "none",
-    cursor: "pointer",
-    textAlign: "left",
-  },
-  cardTitle: {
-    fontWeight: 700,
-    fontSize: "0.9375rem",
-    color: "#1e40af",
-    flexShrink: 0,
-  },
-  cardSummary: {
-    flex: 1,
-    fontSize: "0.875rem",
-    color: "#64748b",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
-  },
-  sendBadge: {
-    fontSize: "0.75rem",
-    background: "#ede9fe",
-    color: "#6d28d9",
-    borderRadius: 4,
-    padding: "0.1rem 0.5rem",
-    fontWeight: 600,
-    flexShrink: 0,
-  },
-  chevron: {
-    fontSize: "0.75rem",
-    color: "#94a3b8",
-    flexShrink: 0,
-  },
-  cardBody: {
-    padding: "1rem 1.25rem 1.25rem",
-  },
-  warning: {
-    background: "#fffbeb",
-    border: "1px solid #fcd34d",
-    color: "#92400e",
-    borderRadius: 4,
-    padding: "0.5rem 0.75rem",
-    fontSize: "0.8125rem",
-    marginBottom: "0.875rem",
-  },
-  grid: {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: "0.75rem 1rem",
-  },
+  imageRow: { marginBottom: "1.25rem", display: "flex", flexDirection: "column", alignItems: "center", gap: "0.375rem" },
+  previewImg: { maxHeight: 200, maxWidth: "100%", objectFit: "contain", borderRadius: 4, border: "1px solid #e2e8f0" },
+  imageCaption: { fontSize: "0.8125rem", color: "#94a3b8" },
+
+  cardList: { display: "flex", flexDirection: "column", gap: "0.75rem", marginBottom: "1.25rem" },
+  card: { border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden", background: "#fff", boxShadow: "0 1px 3px rgba(0,0,0,0.06)" },
+  cardHeader: { width: "100%", display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.75rem 1rem", background: "#f8fafc", border: "none", cursor: "pointer", textAlign: "left" },
+  cardNum: { fontWeight: 700, fontSize: "0.9375rem", color: "#1e40af", flexShrink: 0 },
+  cardSummary: { flex: 1, fontSize: "0.875rem", color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+  sendBadge: { fontSize: "0.75rem", background: "#dbeafe", color: "#1d4ed8", borderRadius: 4, padding: "0.1rem 0.5rem", fontWeight: 600, flexShrink: 0 },
+  chevron: { fontSize: "0.75rem", color: "#94a3b8", flexShrink: 0 },
+  cardBody: { padding: "1rem 1.25rem 1.25rem" },
+
+  warning: { background: "#fffbeb", border: "1px solid #fcd34d", color: "#92400e", borderRadius: 4, padding: "0.5rem 0.75rem", fontSize: "0.8125rem", marginBottom: "0.875rem" },
+
+  grid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem 1rem" },
   halfCol: { display: "flex", flexDirection: "column", gap: "0.2rem" },
   fullCol: { display: "flex", flexDirection: "column", gap: "0.2rem", gridColumn: "1 / -1" },
-  label: { fontSize: "0.8rem", fontWeight: 600, color: "#374151" },
-  input: {
-    padding: "0.4rem 0.6rem",
-    border: "1px solid #d1d5db",
-    borderRadius: 4,
-    fontSize: "0.9rem",
-  },
-  inputWarn: {
-    borderColor: "#fcd34d",
-    background: "#fffbeb",
-  },
-  textarea: {
-    padding: "0.4rem 0.6rem",
-    border: "1px solid #d1d5db",
-    borderRadius: 4,
-    fontSize: "0.9rem",
-    resize: "vertical",
-  },
-  sendSection: {
-    marginTop: "1.25rem",
-    paddingTop: "1rem",
-    borderTop: "1px solid #f1f5f9",
-  },
-  sendTitle: {
-    fontSize: "0.875rem",
-    fontWeight: 700,
-    color: "#374151",
-    marginBottom: "0.625rem",
-  },
-  tmplList: {
-    display: "flex",
-    flexDirection: "column",
-    gap: "0.375rem",
-    marginBottom: "0.625rem",
-  },
-  tmplRow: {
-    display: "flex",
-    alignItems: "flex-start",
-    gap: "0.625rem",
-    padding: "0.5rem 0.75rem",
-    border: "1px solid #e2e8f0",
-    borderRadius: 6,
-    cursor: "pointer",
-    background: "#f8fafc",
-  },
-  tmplRowSelected: {
-    border: "1px solid #93c5fd",
-    background: "#eff6ff",
-  },
-  radio: { marginTop: 3, flexShrink: 0, cursor: "pointer" },
-  tmplInfo: { display: "flex", flexDirection: "column", gap: "0.1rem", flex: 1 },
+  label: { fontSize: "0.75rem", fontWeight: 600, color: "#374151" },
+  input: { padding: "0.4rem 0.6rem", border: "1px solid #d1d5db", borderRadius: 4, fontSize: "0.875rem" },
+  inputWarn: { borderColor: "#fcd34d", background: "#fffbeb" },
+  textarea: { padding: "0.4rem 0.6rem", border: "1px solid #d1d5db", borderRadius: 4, fontSize: "0.875rem", resize: "vertical" },
+
+  tmplSection: { marginTop: "1.25rem", paddingTop: "1rem", borderTop: "1px solid #f1f5f9" },
+  tmplTitle: { fontSize: "0.875rem", fontWeight: 700, color: "#374151", marginBottom: "0.625rem" },
+  tmplList: { display: "flex", flexDirection: "column", gap: "0.375rem", marginBottom: "0.75rem" },
+  tmplRow: { display: "flex", alignItems: "center", gap: "0.625rem", padding: "0.5rem 0.75rem", border: "1px solid #e2e8f0", borderRadius: 6, cursor: "pointer", background: "#f8fafc" },
+  tmplRowSelected: { border: "1px solid #93c5fd", background: "#eff6ff" },
+  radio: { flexShrink: 0, cursor: "pointer" },
+  tmplInfo: { display: "flex", alignItems: "center", gap: "0.375rem" },
   tmplName: { fontWeight: 600, fontSize: "0.875rem", color: "#1e293b" },
-  badge: {
-    display: "inline-block",
-    padding: "0.1rem 0.4rem",
-    background: "#dbeafe",
-    color: "#1d4ed8",
-    borderRadius: 20,
-    fontSize: "0.7rem",
-    fontWeight: 600,
-    marginLeft: "0.375rem",
-  },
-  tmplSubject: { fontSize: "0.775rem", color: "#64748b" },
+  badge: { padding: "0.1rem 0.4rem", background: "#dbeafe", color: "#1d4ed8", borderRadius: 20, fontSize: "0.7rem", fontWeight: 600 },
   tmplNone: { fontSize: "0.875rem", color: "#64748b" },
-  timingSection: {
-    display: "flex",
-    alignItems: "center",
-    gap: "1rem",
-    padding: "0.5rem 0.75rem",
-    background: "#f8fafc",
-    borderRadius: 4,
-    flexWrap: "wrap",
-  },
-  timingLabel: { fontSize: "0.8125rem", fontWeight: 600, color: "#374151", flexShrink: 0 },
-  timingOption: { display: "flex", alignItems: "center", gap: "0.375rem", fontSize: "0.8125rem", cursor: "pointer" },
-  datetimeInput: {
-    padding: "0.3rem 0.5rem",
-    border: "1px solid #d1d5db",
-    borderRadius: 4,
-    fontSize: "0.8125rem",
-    color: "#1e293b",
-  },
-  error: {
-    color: "#dc2626",
-    fontSize: "0.875rem",
-    marginBottom: "0.75rem",
-  },
-  actions: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginTop: "0.5rem",
-  },
-  backBtn: {
-    padding: "0.5rem 1rem",
-    background: "transparent",
-    border: "1px solid #d1d5db",
-    borderRadius: 4,
-    fontSize: "0.875rem",
-    color: "#374151",
-    cursor: "pointer",
-  },
-  saveBtn: {
-    padding: "0.625rem 1.75rem",
-    background: "#2563eb",
-    color: "#fff",
-    border: "none",
-    borderRadius: 4,
-    fontSize: "1rem",
-    fontWeight: 700,
-    cursor: "pointer",
-  },
-  saveBtnDisabled: {
-    background: "#93c5fd",
-    cursor: "not-allowed",
-  },
-  gmailScreen: {
-    padding: "2rem 1.5rem",
-    background: "#fff",
-    borderRadius: 8,
-    boxShadow: "0 1px 4px rgba(0,0,0,0.08)",
-    maxWidth: 560,
-    margin: "0 auto",
-  },
-  gmailTitle: {
-    fontSize: "1.125rem",
-    fontWeight: 700,
-    color: "#1e293b",
-    marginBottom: "0.375rem",
-  },
-  gmailSubtitle: {
-    fontSize: "0.9rem",
-    color: "#64748b",
-    marginBottom: "1.5rem",
-  },
-  gmailList: {
-    display: "flex",
-    flexDirection: "column" as const,
-    gap: "0.75rem",
-    marginBottom: "1.75rem",
-  },
-  gmailRow: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: "0.75rem 1rem",
-    border: "1px solid #e2e8f0",
-    borderRadius: 6,
-    background: "#f8fafc",
-  },
-  gmailLabel: {
-    fontSize: "0.9375rem",
-    color: "#1e293b",
-    fontWeight: 500,
-  },
-  gmailBtn: {
-    padding: "0.4rem 1rem",
-    background: "#2563eb",
-    color: "#fff",
-    borderRadius: 4,
-    fontSize: "0.875rem",
-    fontWeight: 600,
-    textDecoration: "none",
-    flexShrink: 0,
-  },
-  doneBtn: {
-    padding: "0.5rem 1.5rem",
-    background: "#475569",
-    color: "#fff",
-    border: "none",
-    borderRadius: 4,
-    fontSize: "0.9rem",
-    fontWeight: 600,
-    cursor: "pointer",
-  },
+
+  preview: { background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 6, padding: "0.75rem" },
+  previewLabel: { fontSize: "0.7rem", fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: "0.5rem" },
+  previewSubject: { display: "flex", alignItems: "baseline", gap: "0.5rem", marginBottom: "0.5rem" },
+  previewTag: { fontSize: "0.7rem", fontWeight: 700, color: "#94a3b8", flexShrink: 0, background: "#e2e8f0", borderRadius: 3, padding: "0.1rem 0.35rem" },
+  previewSubjectText: { fontSize: "0.875rem", fontWeight: 600, color: "#1e293b" },
+  previewBodyWrap: { display: "flex", gap: "0.5rem", alignItems: "flex-start" },
+  previewBody: { fontSize: "0.8rem", color: "#475569", whiteSpace: "pre-wrap", wordBreak: "break-word", margin: 0, fontFamily: "inherit", lineHeight: 1.65, maxHeight: 180, overflowY: "auto" },
+
+  error: { color: "#dc2626", fontSize: "0.875rem", marginBottom: "0.75rem" },
+
+  actions: { display: "flex", justifyContent: "space-between", alignItems: "center" },
+  backBtn: { padding: "0.5rem 1rem", background: "transparent", border: "1px solid #d1d5db", borderRadius: 4, fontSize: "0.875rem", color: "#374151", cursor: "pointer" },
+  saveBtn: { padding: "0.625rem 1.5rem", background: "#2563eb", color: "#fff", border: "none", borderRadius: 4, fontSize: "0.9375rem", fontWeight: 700, cursor: "pointer" },
+  saveBtnDisabled: { background: "#93c5fd", cursor: "not-allowed" },
+
+  resultCard: { padding: "2rem 1.5rem", background: "#fff", borderRadius: 8, boxShadow: "0 1px 4px rgba(0,0,0,0.08)", maxWidth: 560, margin: "0 auto" },
+  resultTitle: { fontSize: "1.125rem", fontWeight: 700, color: "#1e293b", marginBottom: "0.375rem" },
+  resultSub: { fontSize: "0.9rem", color: "#64748b", marginBottom: "1.5rem" },
+  linkList: { display: "flex", flexDirection: "column", gap: "0.75rem", marginBottom: "1.75rem" },
+  linkRow: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.75rem 1rem", border: "1px solid #e2e8f0", borderRadius: 6, background: "#f8fafc" },
+  linkLabel: { fontSize: "0.9375rem", color: "#1e293b", fontWeight: 500 },
+  mailBtn: { padding: "0.4rem 1rem", background: "#2563eb", color: "#fff", borderRadius: 4, fontSize: "0.875rem", fontWeight: 600, textDecoration: "none", flexShrink: 0 },
+  doneBtn: { padding: "0.5rem 1.5rem", background: "#475569", color: "#fff", border: "none", borderRadius: 4, fontSize: "0.9rem", fontWeight: 600, cursor: "pointer" },
 };
