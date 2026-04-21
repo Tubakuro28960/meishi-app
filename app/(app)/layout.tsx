@@ -3,6 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import LogoutButton from "@/components/LogoutButton";
 
+export const dynamic = "force-dynamic";
+
 const navItems = [
   { href: "/dashboard", label: "ダッシュボード" },
   { href: "/cards", label: "名刺一覧" },
