@@ -10,6 +10,7 @@ const navItems = [
   { href: "/cards/new", label: "名刺追加",   icon: "➕" },
   { href: "/templates", label: "テンプレート", icon: "📝" },
   { href: "/send",      label: "送信",       icon: "✉" },
+  { href: "/account",   label: "アカウント",  icon: "👤" },
 ];
 
 type Props = { email: string };
