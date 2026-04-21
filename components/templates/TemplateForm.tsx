@@ -147,7 +147,7 @@ export default function TemplateForm({
                 ...(copied === key ? s.chipCopied : {}),
               }}
             >
-              {copied === key ? "コピー完了" : `${key} (${label})`}
+              {copied === key ? "コピー完了" : `（${label}）`}
             </button>
           ))}
         </div>
