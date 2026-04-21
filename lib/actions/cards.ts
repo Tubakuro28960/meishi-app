@@ -342,3 +342,24 @@ export async function deleteCard(
   revalidatePath("/cards");
   redirect("/cards");
 }
+
+// 複数IDを一括削除（重複解消用）
+export async function deleteCards(
+  ids: string[]
+): Promise<{ error: string } | void> {
+  if (ids.length === 0) return;
+
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return { error: "ログインが必要です" };
+
+  const { error } = await supabase
+    .from("business_cards")
+    .delete()
+    .in("id", ids)
+    .eq("user_id", user.id);
+
+  if (error) return { error: error.message };
+
+  revalidatePath("/cards");
+}

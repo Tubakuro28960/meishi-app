@@ -58,7 +58,7 @@ function LoginForm() {
         setLoading(false);
         return;
       }
-      router.push("/settings");
+      router.push("/cards/new");
       router.refresh();
     } else {
       // 許可済みアカウントのみ登録可能
