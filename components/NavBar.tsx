@@ -155,7 +155,6 @@ const s: Record<string, React.CSSProperties> = {
   email: { fontSize: "0.75rem", color: "rgba(255,255,255,0.5)" },
 
   hamburger: {
-    display: "flex",
     flexDirection: "column",
     gap: 5,
     background: "none",
