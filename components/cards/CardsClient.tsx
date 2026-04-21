@@ -271,7 +271,7 @@ export default function CardsClient({ cards }: Props) {
               {filtered.map(card => {
                 const isDup = dupIds.has(card.id);
                 return (
-                  <div key={card.id} style={{ ...s.mobileCard, ...(isDup ? s.mobileCardDup : {}) }}>
+                  <div key={card.id} className="list-item card-hover" style={{ ...s.mobileCard, ...(isDup ? s.mobileCardDup : {}) }}>
                     <div style={s.mobileCardTop}>
                       <div style={s.mobileNameRow}>
                         <span style={s.mobileName}>{card.name ?? "—"}</span>
@@ -418,7 +418,7 @@ const s: Record<string, React.CSSProperties> = {
 
   // モバイル用カードレイアウト
   mobileList:      { display: "flex", flexDirection: "column", gap: "0.625rem" },
-  mobileCard:      { background: "#fff", borderRadius: 8, padding: "0.875rem 1rem", boxShadow: "0 1px 3px rgba(0,0,0,0.08)", border: "1px solid #f1f5f9" },
+  mobileCard:      { background: "#fff", borderRadius: 12, padding: "1rem 1.125rem", boxShadow: "0 2px 8px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.04)", border: "none" },
   mobileCardDup:   { background: "#fffbeb", border: "1px solid #fcd34d" },
   mobileCardTop:   { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "0.25rem" },
   mobileNameRow:   { display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" },

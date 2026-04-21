@@ -14,20 +14,22 @@ export default function LogoutButton() {
   }
 
   return (
-    <button onClick={handleLogout} style={styles.button}>
+    <button onClick={handleLogout} className="btn" style={s.btn}>
       ログアウト
     </button>
   );
 }
 
-const styles: Record<string, React.CSSProperties> = {
-  button: {
-    background: "transparent",
-    border: "1px solid #475569",
-    color: "#cbd5e1",
-    padding: "0.25rem 0.75rem",
-    borderRadius: 4,
+const s: Record<string, React.CSSProperties> = {
+  btn: {
+    background: "rgba(255,255,255,0.08)",
+    border: "1px solid rgba(255,255,255,0.2)",
+    color: "rgba(255,255,255,0.8)",
+    padding: "0.3rem 0.875rem",
+    borderRadius: 6,
     fontSize: "0.75rem",
     cursor: "pointer",
+    fontWeight: 500,
+    letterSpacing: "0.01em",
   },
 };

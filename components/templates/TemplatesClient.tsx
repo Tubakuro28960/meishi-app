@@ -32,7 +32,7 @@ export default function TemplatesClient({ templates }: Props) {
       {templates.map(tmpl =>
         isMobile ? (
           /* ── モバイル: 縦積みカード ── */
-          <div key={tmpl.id} style={s.mobileCard}>
+          <div key={tmpl.id} className="list-item card-hover" style={s.mobileCard}>
             <div style={s.mobileTop}>
               <span style={s.mobileName}>{tmpl.name}</span>
               {tmpl.is_default && <span style={s.badge}>デフォルト</span>}
@@ -50,7 +50,7 @@ export default function TemplatesClient({ templates }: Props) {
           </div>
         ) : (
           /* ── デスクトップ: 横並び ── */
-          <div key={tmpl.id} style={s.card}>
+          <div key={tmpl.id} className="list-item card-hover" style={s.card}>
             <div style={s.cardMain}>
               <div style={s.cardTitle}>
                 <span style={s.name}>{tmpl.name}</span>
@@ -80,7 +80,7 @@ const s: Record<string, React.CSSProperties> = {
   list:      { display: "flex", flexDirection: "column", gap: "0.75rem" },
 
   // デスクトップ
-  card:        { background: "#fff", borderRadius: 8, padding: "1rem 1.25rem", boxShadow: "0 1px 4px rgba(0,0,0,0.08)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem" },
+  card:        { background: "#fff", borderRadius: 12, padding: "1rem 1.25rem", boxShadow: "0 2px 8px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.04)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem" },
   cardMain:    { flex: 1, minWidth: 0 },
   cardTitle:   { display: "flex", alignItems: "center", gap: "0.625rem", marginBottom: "0.25rem" },
   name:        { fontWeight: 600, fontSize: "1rem", color: "#1e293b" },
@@ -89,7 +89,7 @@ const s: Record<string, React.CSSProperties> = {
   cardActions: { display: "flex", gap: "0.5rem", flexShrink: 0 },
 
   // モバイル
-  mobileCard:    { background: "#fff", borderRadius: 8, padding: "1rem", boxShadow: "0 1px 3px rgba(0,0,0,0.08)", border: "1px solid #f1f5f9" },
+  mobileCard:    { background: "#fff", borderRadius: 12, padding: "1rem 1.125rem", boxShadow: "0 2px 8px rgba(0,0,0,0.07), 0 0 0 1px rgba(0,0,0,0.04)", border: "none" },
   mobileTop:     { display: "flex", alignItems: "center", gap: "0.5rem", marginBottom: "0.375rem", flexWrap: "wrap" },
   mobileName:    { fontWeight: 700, fontSize: "1rem", color: "#1e293b" },
   mobileSubject: { fontSize: "0.875rem", color: "#64748b", marginBottom: "0.25rem", wordBreak: "break-all" },
